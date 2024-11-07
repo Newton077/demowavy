@@ -4,29 +4,58 @@ import { Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card } from "./ui/card";
-import { useState } from "react";
-import { ADDRESS_REGEX } from "@/lib/utils";
-
-// const _address = "0x6d465d2081b799770d0ce7e755d8db01665903ffb";
+import { useMemo, useState } from "react";
+import { Event } from "@/types/event";
 
 export function SearchSection() {
+	const [loading, setLoading] = useState<boolean>(true)
+	const [hasResult, setHasResult] = useState<boolean>(false)
 	const [address, setAddress] = useState<string | null>(null)
 	const [search, setSearch] = useState<string | null>(null)
+	const [tornado, setTornado] = useState<boolean>(false)
+	const [usdc, setUsdc] = useState<boolean>(false)
+	const [usdt, setUsdt] = useState<boolean>(false)
+	const [ofac, setOfac] = useState<boolean>(false)
 
-	const statusItems = [
-		{ label: "Tornado Cash interaction", value: "YES" },
-		{ label: "USDC blacklisted", value: "YES" },
-		{ label: "USDT blacklisted", value: "NO" },
-		{ label: "OFAC sanctioned", value: "NO" },
-		{ label: "Risk Level", value: "LEVEL " },
-	];
+	const statusItems = useMemo(() => {
+		const riskLevel = (usdc || usdt || ofac) ? 3 : tornado ? 2 : 1
+		return [
+			{ label: "Tornado Cash interaction", value: tornado ? 'YES' : 'NO' },
+			{ label: "USDC blacklisted", value: usdc ? 'YES' : 'NO' },
+			{ label: "USDT blacklisted", value: usdt ? 'YES' : 'NO' },
+			{ label: "OFAC sanctioned", value: ofac ? 'YES' : 'NO' },
+			{ label: "Risk Level", value: `LEVEL ${riskLevel}` },
+		];
+	}, [tornado, usdc, usdt, ofac])
 
-	const handleSearch = () => {
+
+	const handleSearch = async () => {
+		if (!search) return alert('must provide a valid address')
+		setHasResult(true)
+		setLoading(true)
+		setUsdt(false)
+		setUsdc(false)
+		setTornado(false)
+		setOfac(false)
+
 		// validate address	
-		if (!search || ADDRESS_REGEX.test(search)) return alert('must provide a valid address')
 		setAddress(search)
 
 		// query address status in db
+		const raw = await fetch(`/api/events?address=${search}`)
+		const res: { success: boolean, data: Event[] } = await raw.json()
+		console.log({ res })
+
+		const hasUsdt = res.data.find(e => e.contract === 'usdt')
+		const hasUsdc = res.data.find(e => e.contract === 'usdc')
+		const hasTornado = res.data.find(e => e.contract === 'tornado')
+		const hasOfac = res.data.find(e => e.contract === 'ofac')
+
+		if (hasUsdt) setUsdt(true)
+		if (hasUsdc) setUsdc(true)
+		if (hasTornado) setTornado(true)
+		if (hasOfac) setOfac(true)
+		setLoading(false)
 	}
 
 	return <>
@@ -47,27 +76,33 @@ export function SearchSection() {
 			</div>
 		</div>
 
-
-		<div className="space-y-4">
-			<div className="text-sm text-muted-foreground">
-				Status info of
-				<div className="mt-1 font-mono">{address}</div>
-			</div>
-
-			<Card className="overflow-hidden">
-				<div className="grid divide-y">
-					{statusItems.map((item, index) => (
-						<div key={index} className="grid grid-cols-2 p-4">
-							<span>{item.label}</span>
-							<span className="text-right font-medium">{item.value}</span>
+		{
+			!hasResult
+				? null
+				: loading
+					? <p>Loading...</p>
+					: <div className="space-y-4">
+						<div className="text-sm text-muted-foreground">
+							Status info of
+							<div className="mt-1 font-mono">{address}</div>
 						</div>
-					))}
-				</div>
-			</Card>
 
-			<Button className="w-full" variant="default">
-				Generate Investigation
-			</Button>
-		</div>
+						<Card className="overflow-hidden">
+							<div className="grid divide-y">
+								{statusItems.map((item, index) => (
+									<div key={index} className="grid grid-cols-2 p-4">
+										<span>{item.label}</span>
+										<span className="text-right font-medium">{item.value}</span>
+									</div>
+								))}
+							</div>
+						</Card>
+
+						<Button className="w-full" variant="default">
+							Generate Investigation
+						</Button>
+					</div>
+		}
+
 	</>
 }
